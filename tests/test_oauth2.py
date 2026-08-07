@@ -33,6 +33,17 @@ def example_config() -> configparser.ConfigParser:
     ),
 )
 def test_check_scopes(test_scopes: set[str]):
+    # Skip if reddit scopes endpoint is unreachable or returns non-200
+    import requests
+
+    try:
+        r = requests.get("https://www.reddit.com/api/v1/scopes.json", headers={"User-Agent": "bdfr pytest scope check"}, timeout=5)
+    except Exception:
+        pytest.skip("Reddit scopes endpoint unreachable; skipping online scope test")
+
+    if r.status_code != 200:
+        pytest.skip(f"Reddit scopes endpoint returned HTTP {r.status_code}; skipping online scope test")
+
     OAuth2Authenticator._check_scopes(test_scopes, "fetch-scopes test")
 
 
@@ -66,5 +77,16 @@ def test_split_scopes(test_scopes: str, expected: set[str]):
     ),
 )
 def test_check_scopes_bad(test_scopes: set[str]):
+    # Skip if reddit scopes endpoint is unreachable or returns non-200
+    import requests
+
+    try:
+        r = requests.get("https://www.reddit.com/api/v1/scopes.json", headers={"User-Agent": "bdfr pytest scope check"}, timeout=5)
+    except Exception:
+        pytest.skip("Reddit scopes endpoint unreachable; skipping online scope test")
+
+    if r.status_code != 200:
+        pytest.skip(f"Reddit scopes endpoint returned HTTP {r.status_code}; skipping online scope test")
+
     with pytest.raises(BulkDownloaderException):
         OAuth2Authenticator._check_scopes(test_scopes, "fetch-scopes test")

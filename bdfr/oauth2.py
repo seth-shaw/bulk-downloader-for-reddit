@@ -32,7 +32,19 @@ class OAuth2Authenticator:
             )
         except TimeoutError:
             raise BulkDownloaderException("Reached timeout fetching scopes")
-        known_scopes = [scope for scope, data in response.json().items()]
+
+        except requests.exceptions.RequestException as e:
+            raise BulkDownloaderException(f"Error fetching scopes: {e}")
+
+        if response.status_code != 200:
+            raise BulkDownloaderException(f"Failed to fetch scopes: HTTP {response.status_code}")
+
+        try:
+            scopes_json = response.json()
+        except Exception as e:
+            raise BulkDownloaderException(f"Scopes response was not valid JSON: {e}")
+
+        known_scopes = [scope for scope, data in scopes_json.items()]
         known_scopes.append("*")
         for scope in wanted_scopes:
             if scope not in known_scopes:
