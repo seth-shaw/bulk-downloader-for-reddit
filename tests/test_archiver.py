@@ -10,6 +10,19 @@ import pytest
 from bdfr.archiver import Archiver
 
 
+class FakeSubmission(praw.models.Submission):
+    def __init__(self, submission_id: str):
+        self.id = submission_id
+
+
+class FakeRedditInstance:
+    def submission(self, id: str | None = None, url: str | None = None):
+        return FakeSubmission(id if id is not None else url)
+
+    def comment(self, id: str):
+        return FakeSubmission(id)
+
+
 @pytest.mark.online
 @pytest.mark.reddit
 @pytest.mark.parametrize(
@@ -27,3 +40,21 @@ def test_write_submission_json(test_submission_id: str, tmp_path: Path, test_for
     test_submission = reddit_instance.submission(id=test_submission_id)
     archiver_mock.file_name_formatter.format_path.return_value = test_path
     Archiver.write_entry(archiver_mock, test_submission)
+
+@pytest.mark.online
+@pytest.mark.reddit
+@pytest.mark.parametrize(
+    "test_submission_ids",
+    (
+        ("1000000",),
+        ("https://reddit.com/comments/1000000/"),
+    ),
+)
+def test_get_submissions_from_link(test_submission_ids: list[str]):
+    archiver_mock = MagicMock()
+    archiver_mock.args.link = test_submission_ids
+    archiver_mock.reddit_instance = FakeRedditInstance()
+    results = Archiver.get_submissions_from_link(archiver_mock)
+    assert all([isinstance(sub, praw.models.Submission) for res in results for sub in res])
+    assert len(results[0]) == len(test_submission_ids)
+    assert results[0][0].id == test_submission_ids[0]

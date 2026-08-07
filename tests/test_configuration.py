@@ -34,3 +34,8 @@ def test_yaml_file_read():
     assert test_config.subreddit == ["EarthPorn", "TwoXChromosomes", "Mindustry"]
     assert test_config.sort == "new"
     assert test_config.limit == 10
+
+
+def test_default_downvoted_flag_exists():
+    test_config = Configuration()
+    assert test_config.downvoted is False
