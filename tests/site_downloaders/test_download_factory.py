@@ -9,6 +9,7 @@ from bdfr.site_downloaders.base_downloader import BaseDownloader
 from bdfr.site_downloaders.direct import Direct
 from bdfr.site_downloaders.download_factory import DownloadFactory
 from bdfr.site_downloaders.erome import Erome
+from bdfr.site_downloaders.fallback_downloaders.wget_fallback import WgetFallback
 from bdfr.site_downloaders.fallback_downloaders.ytdlp_fallback import YtdlpFallback
 from bdfr.site_downloaders.gallery import Gallery
 from bdfr.site_downloaders.gfycat import Gfycat
@@ -52,6 +53,9 @@ from bdfr.site_downloaders.youtube import Youtube
         ("http://video.pbs.org/viralplayer/2365173446/", YtdlpFallback),
         ("https://www.pornhub.com/view_video.php?viewkey=ph5a2ee0461a8d0", PornHub),
         ("https://www.patreon.com/posts/minecart-track-59346560", Gallery),
+        ("https://www.example.com/", WgetFallback),
+        ("https://www.google.com/", WgetFallback),
+        ("https://www.tiktok.com/@keriberry.420", WgetFallback),
         ("/r/JoySuzanna/comments/1on8q6m/hey_my_loves_ive_got_some_amazing_news_just_for/", SelfPost),
     ),
 )
@@ -63,13 +67,10 @@ def test_factory_lever_good(test_submission_url: str, expected_class: BaseDownlo
 @pytest.mark.parametrize(
     "test_url",
     (
-        "random.com",
-        "bad",
-        "https://www.google.com/",
-        "https://www.google.com",
-        "https://www.google.com/test",
-        "https://www.google.com/test/",
-        "https://www.tiktok.com/@keriberry.420",
+        "://bad",
+        "http:///example.com",
+        "ftp://example.com/resource",
+        "",
     ),
 )
 def test_factory_lever_bad(test_url: str):
