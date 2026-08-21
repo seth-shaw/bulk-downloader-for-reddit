@@ -2,8 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import shlex
+import shutil
 import subprocess
 import tempfile
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Optional
@@ -29,8 +32,19 @@ class WgetFallback(BaseFallbackDownloader):
             raise NotADownloadableLinkError(f"Wget fallback cannot handle link {self.post.url}")
 
         download_function = self._download_warc()
-        res = Resource(self.post, self.post.url, download_function, ".warc")
+        res = Resource(self.post, self.post.url, download_function, ".warc.gz")
         return [res]
+
+    _WGET_EXIT_CODE_REASON = {
+        1: "generic error",
+        2: "parse error",
+        3: "file I/O error",
+        4: "network failure",
+        5: "SSL verification failure",
+        6: "username/password authentication failure",
+        7: "protocol errors",
+        8: "server issued error response",
+    }
 
     def _download_warc(self):
         def download(_: dict) -> bytes:
@@ -42,12 +56,11 @@ class WgetFallback(BaseFallbackDownloader):
                     "--quiet",
                     "--warc-file",
                     str(warc_prefix),
-                    "--no-warc-compression",
                     "--page-requisites",
                     "--span-hosts",
                     "--trust-server-names",
                     "--max-redirect=20",
-                    "--tries=1",
+                    "--tries=2",
                     self._normalize_url(self.post.url),
                 ]
                 try:
@@ -61,16 +74,39 @@ class WgetFallback(BaseFallbackDownloader):
                     logger.exception(e)
                     raise SiteDownloaderError("wget executable not found")
 
+                # Look for any WARC-like files that wget may have produced. Some
+                # builds or configurations may write slightly different names
+                # (e.g. compression suffixes). Prefer the most-recent warc file.
+                warc_candidates = sorted(Path(temp_dir).glob("*.warc*"), key=lambda p: p.stat().st_mtime, reverse=True)
+                selected_warc = warc_candidates[0] if warc_candidates else warc_path
+
                 if completed.returncode != 0:
                     stderr_text = completed.stderr.strip() if completed.stderr else ""
-                    raise SiteDownloaderError(
-                        f"Wget could not capture URL {self.post.url}: {completed.returncode} {stderr_text}"
-                    )
+                    reason = self._WGET_EXIT_CODE_REASON.get(completed.returncode, "unknown error")
+                    command_text = " ".join(shlex.quote(str(arg)) for arg in command)
+                    logger.debug("Wget failed command: %s", command_text)
+                    logger.debug("Wget stderr: %s", stderr_text or "<empty>")
+                    # If wget returned non-zero but produced a WARC that contains
+                    # the target URL, accept the capture as successful.
+                    if selected_warc.exists() and self._warc_contains_url(
+                        selected_warc, self._normalize_url(self.post.url)
+                    ):
+                        logger.warning(
+                            "Wget exited with code %s (%s), but the WARC file %s contains the target URL; accepting capture",
+                            completed.returncode,
+                            reason,
+                            str(selected_warc),
+                        )
+                    else:
+                        raise SiteDownloaderError(
+                            f"Wget could not capture URL {self.post.url}: exit code {completed.returncode} ({reason})"
+                            + (f": {stderr_text}" if stderr_text else "")
+                        )
 
-                if not warc_path.exists():
+                if not selected_warc.exists():
                     raise SiteDownloaderError("Wget did not produce a WARC file")
 
-                with warc_path.open("rb") as file:
+                with selected_warc.open("rb") as file:
                     return file.read()
 
         return download
@@ -80,6 +116,25 @@ class WgetFallback(BaseFallbackDownloader):
         if url.startswith(("http://", "https://")):
             return url
         return "https://" + url
+
+    @staticmethod
+    def _warc_contains_url(warc_path: Path, url: str) -> bool:
+        try:
+            from warcio.archiveiterator import ArchiveIterator
+
+            logger.debug("Using warcio to inspect WARC %s for %s", warc_path, url)
+            with warc_path.open("rb") as file:
+                for record in ArchiveIterator(file):
+                    target = record.rec_headers.get_header("WARC-Target-URI")
+                    if target == url or target == f"<{url}>":
+                        logger.debug("WARC %s: found target via warcio: %s", warc_path, target)
+                        return True
+        except Exception:
+            logger.exception("warcio-based WARC scanning failed for %s", warc_path)
+            return False
+
+        logger.debug("WARC %s: target not found via warcio", warc_path)
+        return False
 
     @staticmethod
     def can_handle_link(url: str) -> bool:

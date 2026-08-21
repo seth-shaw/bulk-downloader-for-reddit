@@ -10,6 +10,7 @@ import prawcore.exceptions
 import pytest
 
 from bdfr.__main__ import make_console_logging_handler
+from bdfr.cloner import RedditCloner
 from bdfr.configuration import Configuration
 from bdfr.connector import RedditConnector
 from bdfr.downloader import RedditDownloader
@@ -305,3 +306,21 @@ def test_download_handles_praw_exception_before_first_submission(
     downloader_mock.reddit_lists = [_raise_immediately()]
     # Should not raise UnboundLocalError
     RedditDownloader.download(downloader_mock)
+
+
+@pytest.mark.parametrize("test_exception", (prawcore.exceptions.TooManyRequests(MagicMock()),))
+def test_cloner_handles_praw_exception_before_first_submission(
+    test_exception: Exception,
+    downloader_mock: MagicMock,
+):
+    """Test that a PRAW exception raised before first submission in cloner.download does not cause UnboundLocalError."""
+
+    def _raise_immediately():
+        raise test_exception
+        yield  # noqa: unreachable - makes this a generator
+
+    downloader_mock.reddit_lists = [_raise_immediately()]
+    cloner = RedditCloner(downloader_mock.args)
+    cloner.reddit_lists = downloader_mock.reddit_lists
+    # Should not raise UnboundLocalError
+    cloner.download()
