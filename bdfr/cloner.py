@@ -23,11 +23,18 @@ class RedditCloner(RedditDownloader, Archiver):
             submission = None
             try:
                 for submission in generator:
-                    try:
-                        self._download_submission(submission)
-                        self.write_entry(submission)
-                    except prawcore.PrawcoreException as e:
-                        logger.error(f"Submission {submission.id} failed to be cloned due to a PRAW exception: {e}")
+                    while True:
+                        try:
+                            self._download_submission(submission)
+                            self.write_entry(submission)
+                            break
+                        except prawcore.TooManyRequests as e:
+                            logger.warning(f"Submission {submission.id} was rate limited while being cloned: {e}")
+                            logger.debug("Waiting 60 seconds before retrying submission %s", submission.id)
+                            sleep(60)
+                        except prawcore.PrawcoreException as e:
+                            logger.error(f"Submission {submission.id} failed to be cloned due to a PRAW exception: {e}")
+                            break
             except prawcore.PrawcoreException as e:
                 last_id = submission.id if submission else "N/A"
                 logger.error(f"The submission after {last_id} failed to download due to a PRAW exception: {e}")
