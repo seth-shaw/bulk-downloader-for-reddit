@@ -324,3 +324,32 @@ def test_cloner_handles_praw_exception_before_first_submission(
     cloner.reddit_lists = downloader_mock.reddit_lists
     # Should not raise UnboundLocalError
     cloner.download()
+
+
+def test_cloner_retries_submission_after_rate_limit(downloader_mock: MagicMock):
+    submission = MagicMock(id="test-submission")
+    rate_limit_exception = prawcore.exceptions.TooManyRequests(MagicMock(status_code=429))
+    downloader_mock.reddit_lists = [[submission]]
+    downloader_mock._download_submission.side_effect = [rate_limit_exception, None]
+
+    with patch("bdfr.cloner.sleep") as sleep_mock:
+        RedditCloner.download(downloader_mock)
+
+    assert downloader_mock._download_submission.call_count == 2
+    downloader_mock.write_entry.assert_called_once_with(submission)
+    sleep_mock.assert_called_once_with(60)
+
+
+def test_cloner_stops_retrying_on_different_praw_exception(downloader_mock: MagicMock):
+    submission = MagicMock(id="test-submission")
+    rate_limit_exception = prawcore.exceptions.TooManyRequests(MagicMock(status_code=429))
+    other_exception = prawcore.exceptions.PrawcoreException("different error")
+    downloader_mock.reddit_lists = [[submission]]
+    downloader_mock._download_submission.side_effect = [rate_limit_exception, other_exception]
+
+    with patch("bdfr.cloner.sleep") as sleep_mock:
+        RedditCloner.download(downloader_mock)
+
+    assert downloader_mock._download_submission.call_count == 2
+    downloader_mock.write_entry.assert_not_called()
+    sleep_mock.assert_called_once_with(60)
