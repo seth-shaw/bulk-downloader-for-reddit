@@ -9,6 +9,7 @@ from bdfr.site_downloaders.base_downloader import BaseDownloader
 from bdfr.site_downloaders.delay_for_reddit import DelayForReddit
 from bdfr.site_downloaders.direct import Direct
 from bdfr.site_downloaders.erome import Erome
+from bdfr.site_downloaders.fallback_downloaders.wget_fallback import WgetFallback
 from bdfr.site_downloaders.fallback_downloaders.ytdlp_fallback import YtdlpFallback
 from bdfr.site_downloaders.gallery import Gallery
 from bdfr.site_downloaders.gfycat import Gfycat
@@ -24,6 +25,12 @@ from bdfr.site_downloaders.youtube import Youtube
 class DownloadFactory:
     @staticmethod
     def pull_lever(url: str) -> type[BaseDownloader]:
+        parsed_url = urllib.parse.urlsplit(url)
+        if parsed_url.scheme and parsed_url.scheme not in ("http", "https"):
+            raise NotADownloadableLinkError(f"No downloader module exists for url {url}")
+        if parsed_url.scheme in ("http", "https") and not parsed_url.netloc:
+            raise NotADownloadableLinkError(f"No downloader module exists for url {url}")
+
         sanitised_url = DownloadFactory.sanitise_url(url).lower()
         if re.match(r"(i\.|m\.|o\.)?imgur", sanitised_url):
             return Imgur
@@ -57,6 +64,8 @@ class DownloadFactory:
             return Vidble
         elif YtdlpFallback.can_handle_link(sanitised_url):
             return YtdlpFallback
+        elif WgetFallback.can_handle_link(sanitised_url):
+            return WgetFallback
         else:
             raise NotADownloadableLinkError(f"No downloader module exists for url {url}")
 
